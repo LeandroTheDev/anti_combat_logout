@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34728.123
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AntiCombatLogout", "AntiCombatLogout.csproj", "{ABE481E5-7D3B-4FC1-A336-A9200E970B70}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ABE481E5-7D3B-4FC1-A336-A9200E970B70}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ABE481E5-7D3B-4FC1-A336-A9200E970B70}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ABE481E5-7D3B-4FC1-A336-A9200E970B70}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ABE481E5-7D3B-4FC1-A336-A9200E970B70}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {E7C02239-2B50-4632-8417-4BA849A58A77}
+	EndGlobalSection
+EndGlobal
