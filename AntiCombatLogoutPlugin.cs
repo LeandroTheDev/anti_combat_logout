@@ -147,6 +147,7 @@ namespace AntiCombatLogout
                 if (combatTimer.TryGetValue(player.Id, out CancellationTokenSource _taskSource))
                 {
                     _taskSource.Cancel();
+                    _taskSource.Dispose();
                     // Remove it from timer memory
                     combatTimer.Remove(player.Id);
                 };
