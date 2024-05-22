@@ -67,27 +67,9 @@ namespace AntiCombatLogout
         /// </summary>
         private Dictionary<UnturnedPlayer, uint> combatTimer = new();
 
-        #region debug
-        private int tickrateDebug = 0;
-        private int tickrateDebugPassed = 0;
-        #endregion
-
         public void Update()
         {
             if (plugin == null) return;
-
-            #region debug
-            if (plugin.Configuration.Instance.DebugExtended)
-            {
-                tickrateDebug++;
-                if (tickrateDebug == plugin.Configuration.Instance.ServerTickrate)
-                {
-                    tickrateDebug = 0;
-                    Logger.Log($"[AntiCombatLogout] Seconds passed: {tickrateDebugPassed}");
-                    tickrateDebugPassed++;
-                }
-            }
-            #endregion
 
             if (combatTimer.Count == 0) return;
     
@@ -249,6 +231,7 @@ namespace AntiCombatLogout
                 // Add player to the combat variables
                 AntiCombatLogoutTools.PlayerEnteringInCombat(player.Id);
             }
+            previousHealth[player.Id] = health;
         }
     }
 
