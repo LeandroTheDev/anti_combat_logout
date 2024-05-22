@@ -1,54 +1,144 @@
 ﻿extern alias UnityEngineCoreModule;
+
+using Rocket.API;
 using Rocket.API.Collections;
+using Rocket.API.Extensions;
 using Rocket.Core.Logging;
 using Rocket.Core.Plugins;
-using Rocket.Core.Utils;
 using Rocket.Unturned.Chat;
 using Rocket.Unturned.Player;
 using SDG.Unturned;
+using UnityEngine;
 using UnityCoreModule = UnityEngineCoreModule.UnityEngine;
 
 namespace AntiCombatLogout
 {
     public class AntiCombatLogoutPlugin : RocketPlugin<AntiCombatLogouConfiguration>
     {
-        private readonly Dictionary<string, byte> previousHealth = new();
-        private readonly Dictionary<string, CancellationTokenSource> combatTimer = new();
+        private CombatPlayer? combatPlayer;
         public override void LoadPlugin()
         {
             base.LoadPlugin();
-            Rocket.Unturned.U.Events.OnPlayerConnected += OnPlayerConnected;
-            Rocket.Unturned.U.Events.OnPlayerDisconnected += OnPlayerDisconnected;
+            // Add a reference from combat player to unity thread
+            combatPlayer = gameObject.AddComponent<CombatPlayer>();
+            // Instanciate the plugin into the combatPlayer
+            combatPlayer.InstanciatePlugin(this);
+
+            // Connection event
+            Rocket.Unturned.U.Events.OnPlayerConnected += combatPlayer.PlayerConnected;
+            // Disconnection event
+            Rocket.Unturned.U.Events.OnPlayerDisconnected += combatPlayer.PlayerDisconnect;
+
             Logger.Log("AntiCombatLogout by LeandroTheDev");
         }
 
-        private void OnPlayerConnected(UnturnedPlayer player)
+        public override void UnloadPlugin(PluginState state = PluginState.Unloaded)
+        {
+            // Remove events
+            if (combatPlayer != null)
+            {
+                Rocket.Unturned.U.Events.OnPlayerConnected -= combatPlayer.PlayerConnected;
+                Rocket.Unturned.U.Events.OnPlayerDisconnected -= combatPlayer.PlayerDisconnect;
+            }
+            // Remove the component reference
+            gameObject.TryRemoveComponent<CombatPlayer>();
+            base.UnloadPlugin(state);
+        }
+
+        public override TranslationList DefaultTranslations => new()
+        {
+            { "Entering_Combat", "You are in combat, don't logout for {0} seconds" },
+            { "No_Longer_Combat", "You are no longer in combat!" },
+            { "Player_Exited_In_combat", "{0} exited in combat, what a shame" }
+        };
+    }
+    class CombatPlayer : MonoBehaviour
+    {
+        /// <summary>
+        /// Stores the main plugin from Rocket
+        /// </summary>
+        AntiCombatLogoutPlugin? plugin;
+        /// <summary>
+        /// All players online and previous life before getting updated
+        /// </summary>
+        private readonly Dictionary<string, byte> previousHealth = new();
+        /// <summary>
+        /// All players in combat will store the tickrate here
+        /// </summary>
+        private readonly Dictionary<UnturnedPlayer, uint> combatTimer = new();
+
+        #region debug
+        private int tickrateDebug = 0;
+        private int tickrateDebugPassed = 0;
+        #endregion
+
+        public void Update()
+        {
+            if (plugin == null) return;
+
+            #region debug
+            if (plugin.Configuration.Instance.DebugExtended)
+            {
+                tickrateDebug++;
+                if (tickrateDebug == plugin.Configuration.Instance.ServerTickrate)
+                {
+                    tickrateDebug = 0;
+                    Logger.Log($"[AntiCombatLogout] Seconds passed: {tickrateDebugPassed}");
+                    tickrateDebugPassed++;
+                }
+            }
+            #endregion
+
+            if (combatTimer.Count == 0) return;
+
+            // Swipe all combat players to reduce their combat tickrate remaining
+            List<UnturnedPlayer> playersToRemove = new();
+            foreach (KeyValuePair<UnturnedPlayer, uint> keyValue in combatTimer)
+            {
+                uint tickrate = keyValue.Value - 1;
+                if (tickrate <= 0)
+                {
+                    // Inform the player
+                    UnturnedChat.Say(keyValue.Key, plugin.Translate("No_Longer_Combat"), Palette.COLOR_G);
+                    // Remove it from combat
+                    AntiCombatLogoutTools.PlayerExitingFromCombat(keyValue.Key.Id);
+                    // Add it to the remove section
+                    playersToRemove.Add(keyValue.Key);
+                }
+                // Update player tickrate
+                combatTimer[keyValue.Key] = tickrate;
+            }
+            // Remove players from combatTimers
+            foreach (UnturnedPlayer player in playersToRemove) combatTimer.Remove(player);
+        }
+
+        public void InstanciatePlugin(AntiCombatLogoutPlugin _plugin) => plugin = _plugin;
+        public void PlayerConnected(UnturnedPlayer player)
         {
             // Add the combat players variable
             AntiCombatLogoutTools.CombatPlayersId.Add(player.Id, false);
             // Add the player to the previous health memory
             previousHealth.Add(player.Id, player.Health);
             // Instanciate the update event
-            player.Events.OnUpdateHealth += HealthUpdate;
+            player.Events.OnUpdateHealth += PlayerHealthUpdated;
         }
-        private void OnPlayerDisconnected(UnturnedPlayer player)
+        public void PlayerDisconnect(UnturnedPlayer player)
         {
-            // If player disconnect in combat sucide then
+            if (plugin == null) return;
+
+            // If player disconnect in combat lets drop their items
             if (AntiCombatLogoutTools.CombatPlayersId[player.Id])
             {
                 AntiCombatLogoutTools.PlayerLogoutInCombat(player.Id);
                 // Inform all players
-                UnturnedChat.Say(Translate("Player_Exited_In_combat", player.DisplayName));
-
-                // If any task exist for the player cancel it
-                if (combatTimer.TryGetValue(player.Id, out CancellationTokenSource _taskSource)) _taskSource.Cancel();
+                UnturnedChat.Say(plugin.Translate("Player_Exited_In_combat", player.DisplayName));
 
                 // Dropping Normal items and Equipped items
-                for (byte i = 0; i < Configuration.Instance.InventoryMaxPage; i++)
+                for (byte i = 0; i < plugin.Configuration.Instance.InventoryMaxPage; i++)
                 {
-                    for (byte j = 0; j < Configuration.Instance.InventoryMaxX; j++)
+                    for (byte j = 0; j < plugin.Configuration.Instance.InventoryMaxX; j++)
                     {
-                        for (byte k = 0; k < Configuration.Instance.InventoryMaxY; k++)
+                        for (byte k = 0; k < plugin.Configuration.Instance.InventoryMaxY; k++)
                         {
                             player.Inventory.ReceiveDropItem(i, j, k);
                         }
@@ -115,19 +205,19 @@ namespace AntiCombatLogout
                 }
 
                 // Deleting player clothing
-                string clothingPath = Path.Combine(Configuration.Instance.PlayersFolder, $"{player.Id}_0", Configuration.Instance.LevelName, "Player", "Clothing.dat");
+                string clothingPath = Path.Combine(plugin.Configuration.Instance.PlayersFolder, $"{player.Id}_0", plugin.Configuration.Instance.LevelName, "Player", "Clothing.dat");
                 if (File.Exists(clothingPath)) File.Delete(clothingPath);
 
                 // Deleting player inventory
-                string inventoryPath = Path.Combine(Configuration.Instance.PlayersFolder, $"{player.Id}_0", Configuration.Instance.LevelName, "Player", "Inventory.dat");
+                string inventoryPath = Path.Combine(plugin.Configuration.Instance.PlayersFolder, $"{player.Id}_0", plugin.Configuration.Instance.LevelName, "Player", "Inventory.dat");
                 if (File.Exists(inventoryPath)) File.Delete(inventoryPath);
             };
 
             // Remove the update event for the player to release memory
-            player.Events.OnUpdateHealth -= HealthUpdate;
+            player.Events.OnUpdateHealth -= PlayerHealthUpdated;
 
             // Remove it from timer memory
-            combatTimer.Remove(player.Id);
+            combatTimer.Remove(player);
 
             // Remove previous player health from the memory
             previousHealth.Remove(player.Id);
@@ -135,53 +225,23 @@ namespace AntiCombatLogout
             // Remove it from combat memory
             AntiCombatLogoutTools.CombatPlayersId.Remove(player.Id);
         }
-
-        private void HealthUpdate(UnturnedPlayer player, byte health)
+        public void PlayerHealthUpdated(UnturnedPlayer player, byte health)
         {
+            if (plugin == null) return;
+
             if (previousHealth[player.Id] > health)
             {
-                // If player is already in combat dont inform it again
-                if (!AntiCombatLogoutTools.CombatPlayersId[player.Id]) UnturnedChat.Say(player, Translate("Entering_Combat", Configuration.Instance.CombatSecondsDuration), Palette.COLOR_R);
-
-                // If any task exist for the player cancel it
-                if (combatTimer.TryGetValue(player.Id, out CancellationTokenSource _taskSource))
+                // Check if player is currently in combat mode
+                if (combatTimer.TryGetValue(player, out _)) combatTimer[player] = plugin.Configuration.Instance.CombatTickrateDuration;
+                else
                 {
-                    _taskSource.Cancel();
-                    _taskSource.Dispose();
-                    // Remove it from timer memory
-                    combatTimer.Remove(player.Id);
-                };
-
-                // Create the cancellation token
-                CancellationTokenSource taskSource = new();
-                // Add it to the combat timer
-                combatTimer.Add(player.Id, taskSource);
-
-                // Create the delay method
-                Task.Delay(Configuration.Instance.CombatSecondsDuration * 1000, taskSource.Token).ContinueWith((task) =>
-                {
-                    if (task.IsCanceled) return;
-                    // Run in unity main thread because UnturnedChat only works in main thread
-                    TaskDispatcher.QueueOnMainThread(() =>
-                    {
-                        // Inform the player
-                        UnturnedChat.Say(player, Translate("No_Longer_Combat"), Palette.COLOR_G);
-                        // Remove it from combat
-                        AntiCombatLogoutTools.PlayerExitingFromCombat(player.Id);
-                    });
-                });
-
+                    UnturnedChat.Say(player, plugin.Translate("Entering_Combat", plugin.Configuration.Instance.CombatTickrateDuration / plugin.Configuration.Instance.ServerTickrate), Palette.COLOR_R);
+                    combatTimer.Add(player, plugin.Configuration.Instance.CombatTickrateDuration);
+                }
                 // Add player to the combat variables
                 AntiCombatLogoutTools.PlayerEnteringInCombat(player.Id);
             }
         }
-
-        public override TranslationList DefaultTranslations => new()
-        {
-            { "Entering_Combat", "You are in combat, don't logout for {0} seconds" },
-            { "No_Longer_Combat", "You are no longer in combat!" },
-            { "Player_Exited_In_combat", "{0} exited in combat, what a shame" }
-        };
     }
 
     static public class AntiCombatLogoutTools
