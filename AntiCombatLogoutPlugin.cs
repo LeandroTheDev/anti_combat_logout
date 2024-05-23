@@ -65,7 +65,7 @@ namespace AntiCombatLogout
         /// <summary>
         /// All players in combat will store the tickrate here
         /// </summary>
-        private readonly Dictionary<UnturnedPlayer, uint> combatTimer = new();
+        private Dictionary<UnturnedPlayer, uint> combatTimer = new();
 
         #region debug
         private int tickrateDebug = 0;
@@ -90,26 +90,34 @@ namespace AntiCombatLogout
             #endregion
 
             if (combatTimer.Count == 0) return;
-
-            // Swipe all combat players to reduce their combat tickrate remaining
+    
             List<UnturnedPlayer> playersToRemove = new();
+            Dictionary<UnturnedPlayer, uint> combatTimersNew = new(combatTimer);
+
+            // Swipe all active combat timers
             foreach (KeyValuePair<UnturnedPlayer, uint> keyValue in combatTimer)
             {
+                // Reduce tickrate
                 uint tickrate = keyValue.Value - 1;
+
                 if (tickrate <= 0)
                 {
-                    // Inform the player
+                    // Inform player
                     UnturnedChat.Say(keyValue.Key, plugin.Translate("No_Longer_Combat"), Palette.COLOR_G);
-                    // Remove it from combat
+                    // Globally remove from combat
                     AntiCombatLogoutTools.PlayerExitingFromCombat(keyValue.Key.Id);
-                    // Add it to the remove section
+                    // Add to remove list
                     playersToRemove.Add(keyValue.Key);
                 }
-                // Update player tickrate
-                combatTimer[keyValue.Key] = tickrate;
+                // Update tickrate
+                else combatTimersNew[keyValue.Key] = tickrate;
             }
-            // Remove players from combatTimers
-            foreach (UnturnedPlayer player in playersToRemove) combatTimer.Remove(player);
+
+            // Remove players from combat timer
+            foreach (UnturnedPlayer player in playersToRemove) combatTimersNew.Remove(player);
+
+            // Actually update the combat timer after all
+            combatTimer = combatTimersNew;
         }
 
         public void InstanciatePlugin(AntiCombatLogoutPlugin _plugin) => plugin = _plugin;
